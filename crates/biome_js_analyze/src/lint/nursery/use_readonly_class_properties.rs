@@ -6,10 +6,7 @@ use biome_console::markup;
 use biome_deserialize_macros::Deserializable;
 use biome_js_factory::make;
 use biome_js_syntax::{
-    AnyJsAssignment, AnyJsAssignmentPattern, AnyJsClassMember, AnyJsClassMemberName,
-    AnyJsConstructorParameter, AnyJsFormalParameter, AnyJsPropertyModifier,
-    AnyTsPropertyParameterModifier, JsAssignmentExpression, JsClassDeclaration, JsLanguage,
-    JsPropertyClassMember, JsSyntaxKind, JsSyntaxNode, JsSyntaxToken, TsPropertyParameter,
+    AnyJsAssignment, AnyJsAssignmentPattern, AnyJsClassMember, AnyJsClassMemberName, AnyJsConstructorParameter, AnyJsFormalParameter, AnyJsPropertyModifier, AnyTsPropertyParameterModifier, JsAssignmentExpression, JsClassDeclaration, JsLanguage, JsMethodClassMember, JsPropertyClassMember, JsSyntaxKind, JsSyntaxNode, JsSyntaxToken, TsPropertyParameter
 };
 use biome_rowan::{
     declare_node_union, syntax::SyntaxTrivia, AstNode, AstNodeExt, AstNodeList, AstSeparatedList,
@@ -232,19 +229,19 @@ fn get_eligible_property(
     }
 
     let mut eligible = false;
-    // `JsAccessorModifier` can't use with `TsReadonlyModifier`
-    modifiers.iter().for_each(|modifier| match modifier {
-        AnyJsPropertyModifier::TsAccessibilityModifier(accessibility_modifier) => {
-            eligible = !only_private || accessibility_modifier.is_private();
+    for modifier in modifiers.iter() {
+        match modifier {
+            AnyJsPropertyModifier::JsAccessorModifier(_)|
+            AnyJsPropertyModifier::TsReadonlyModifier(_) => {
+                eligible = false;
+                break;
+            },
+            AnyJsPropertyModifier::TsAccessibilityModifier(accessibility_modifier) => {
+                eligible = !only_private || accessibility_modifier.is_private();
+            }
+            _ => {}
         }
-        AnyJsPropertyModifier::TsReadonlyModifier(_) => {
-            eligible = false;
-        }
-        AnyJsPropertyModifier::JsAccessorModifier(_) => {
-            eligible = false;
-        }
-        _ => {}
-    });
+    }
 
     eligible
 }
@@ -301,8 +298,30 @@ fn find_properties_need_add_readonly(
     for event in events {
         match event {
             WalkEvent::Enter(syntax_node) => match syntax_node.kind() {
-                JsSyntaxKind::JS_CONSTRUCTOR_CLASS_MEMBER => constructor_member = true,
-                JsSyntaxKind::JS_METHOD_CLASS_MEMBER => constructor_member = false,
+                // check all param if has JsInitializerClause
+                // and JsInitializerClause is JsParenthesizedExpression
+                // TODO only check `JS_METHOD_CLASS_MEMBER` and `JS_CONSTRUCTOR_CLASS_MEMBER`
+                // need context to check like `{} as this . `
+                JsSyntaxKind::JS_METHOD_CLASS_MEMBER => {
+                    constructor_member = false;
+                    dbg!(&syntax_node);
+                    let method_member = JsMethodClassMember::unwrap_cast(syntax_node.clone());
+                    let parameters = method_member.parameters();
+                    // public update(z: number = (() => {
+                    //     this.x += 1;
+                    //     return this.x
+                    // })()) {
+                    //     this.y = z
+                    // }
+                    if let Ok(parameters) = parameters {
+
+                    }
+                },
+                JsSyntaxKind::JS_CONSTRUCTOR_CLASS_MEMBER => {
+                    // TODO static member if chang in constructor
+                    constructor_member = true;
+                    dbg!(&syntax_node);
+                },
                 JsSyntaxKind::JS_ASSIGNMENT_EXPRESSION => {
                     if constructor_member {
                         continue; // skip constructor assignment
@@ -319,13 +338,6 @@ fn find_properties_need_add_readonly(
                         }
                     }
                 },
-                // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Expressions_and_operators
-                JsSyntaxKind::JS_BINARY_EXPRESSION => {
-                    // todo like this.#app >> 1
-                },
-                JsSyntaxKind::JS_STATIC_MEMBER_ASSIGNMENT =>{
-                    // todo like this.#app++
-                }
                 _ => {},
             },
             WalkEvent::Leave(_) => {}
