@@ -26,10 +26,12 @@ declare_lint_rule! {
     /// to be modified outside of their declaring class. If that class never modifies their value,
     /// they may safely be marked as readonly.
     ///
-    /// This rule reports on private members are marked as readonly
+    /// This rule reports on private members and marks them as `readonly`
     /// if they're never modified outside of the constructor.
     ///
     /// ## Examples
+    ///
+    /// ### Invalid
     ///
     /// ```typescript
     /// class Container {
@@ -44,6 +46,29 @@ declare_lint_rule! {
     ///         private neverModifiedParameter: string,
     ///     ) {
     ///         this.onlyModifiedInConstructor = onlyModifiedInConstructor;
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// ### Valid
+    ///
+    /// ```typescript
+    /// class Container {
+    ///     private readonly neverModifiedMember = true;
+    ///     private readonly onlyModifiedInConstructor: number;
+    ///
+    ///     // This is modified later on by the class
+    ///     #modifiedLaterPrivateField = 'unchanged';
+    ///
+    ///     public constructor(
+    ///         onlyModifiedInConstructor: number
+    ///         private readonly neverModifiedParameter: string,
+    ///     ) {
+    ///         this.onlyModifiedInConstructor = onlyModifiedInConstructor;
+    ///     }
+    ///
+    ///     public mutatePrivateField() {
+    ///         this.#modifiedLaterPrivateField = 'mutated';
     ///     }
     /// }
     /// ```
@@ -63,7 +88,7 @@ declare_lint_rule! {
     ///
     /// ### checkAllProperties
     ///
-    /// Check on all properties (`public` and `protected` properties). Default: false.
+    /// Check on all properties (`public` and `protected` properties). Default: `false`.
     ///
     pub UseReadonlyClassProperties {
         version: "1.0.0",
@@ -76,12 +101,12 @@ declare_lint_rule! {
 }
 
 declare_node_union! {
-    pub AnyClassProperties = JsPropertyClassMember | TsPropertyParameter
+    pub AnyClassPropertiesLike = JsPropertyClassMember | TsPropertyParameter
 }
 
 impl Rule for UseReadonlyClassProperties {
     type Query = Ast<JsClassDeclaration>;
-    type State = AnyClassProperties;
+    type State = AnyClassPropertiesLike;
     type Signals = Box<[Self::State]>;
     type Options = ReadonlyClassPropertiesOptions;
 
@@ -114,7 +139,8 @@ impl Rule for UseReadonlyClassProperties {
 
     fn action(ctx: &RuleContext<Self>, state: &Self::State) -> Option<JsRuleAction> {
         let mut mutation = ctx.root().begin();
-        mutation.replace_element_discard_trivia(state.into_syntax(), state.replace_syntax());
+
+        mutation.replace_element_discard_trivia(state.syntax().clone().into(), state.replace_syntax());
 
         Some(JsRuleAction::new(
             ctx.metadata().action_category(ctx.category(), ctx.group()),
@@ -146,7 +172,7 @@ fn is_default<T: Default + Eq>(value: &T) -> bool {
 fn get_constructor_eligible_params(
     class_declaration: &JsClassDeclaration,
     only_private: bool,
-) -> FxHashSet<AnyClassProperties> {
+) -> Vec<AnyClassPropertiesLike> {
     let constructor_member =
         class_declaration
             .members()
@@ -177,11 +203,7 @@ fn get_constructor_eligible_params(
                             _ => {}
                         });
 
-                        if eligible {
-                            return Some(property_parameter.into());
-                        }
-
-                        None
+                        eligible.then(|| property_parameter.into())
                     }
                     _ => None,
                 })
@@ -189,7 +211,7 @@ fn get_constructor_eligible_params(
         }
     }
 
-    FxHashSet::default()
+    Vec::new()
 }
 
 fn get_eligible_property(
@@ -226,17 +248,14 @@ fn get_eligible_property(
 fn get_eligible_properties(
     class_declaration: &JsClassDeclaration,
     only_private: bool,
-) -> FxHashSet<AnyClassProperties> {
+) -> Vec<AnyClassPropertiesLike> {
     class_declaration
         .members()
         .iter()
         .filter_map(|class_member| match class_member {
             AnyJsClassMember::JsPropertyClassMember(property_class_member) => {
                 let eligible = get_eligible_property(&property_class_member, only_private);
-                if eligible {
-                    return Some(property_class_member.into());
-                }
-                None
+                eligible.then(|| property_class_member.into())
             }
             _ => None,
         })
@@ -269,8 +288,8 @@ fn get_property_name(assignment: AnyJsAssignment) -> Option<String> {
 
 fn find_properties_need_add_readonly(
     syntax: &JsSyntaxNode,
-    mut properties: FxHashSet<AnyClassProperties>,
-) -> Vec<AnyClassProperties> {
+    mut properties: Vec<AnyClassPropertiesLike>,
+) -> Vec<AnyClassPropertiesLike> {
     let mut constructor_member = false;
     let mut changed_properties: FxHashSet<String> = FxHashSet::default();
     let events = syntax.preorder();
@@ -295,8 +314,15 @@ fn find_properties_need_add_readonly(
                             changed_properties.insert(name);
                         }
                     }
+                },
+                // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Expressions_and_operators
+                JsSyntaxKind::JS_BINARY_EXPRESSION => {
+                    // todo like this.#app >> 1
+                },
+                JsSyntaxKind::JS_STATIC_MEMBER_ASSIGNMENT =>{
+                    // todo like this.#app++
                 }
-                _ => {}
+                _ => {},
             },
             WalkEvent::Leave(_) => {}
         }
@@ -356,10 +382,10 @@ fn get_replace_class_member_name(
     }
 }
 
-impl AnyClassProperties {
+impl AnyClassPropertiesLike {
     pub fn text_trimmed(&self) -> Option<String> {
         match self {
-            AnyClassProperties::JsPropertyClassMember(property_class_member) => {
+            AnyClassPropertiesLike::JsPropertyClassMember(property_class_member) => {
                 let class_member_name = property_class_member.name();
                 if let Ok(class_member_name) = class_member_name {
                     let member_name = class_member_name.name();
@@ -376,7 +402,7 @@ impl AnyClassProperties {
                 }
                 None
             }
-            AnyClassProperties::TsPropertyParameter(property_parameter) => {
+            AnyClassPropertiesLike::TsPropertyParameter(property_parameter) => {
                 match property_parameter.formal_parameter().ok()? {
                     AnyJsFormalParameter::JsFormalParameter(formal_parameter) => Some(
                         formal_parameter
@@ -397,10 +423,10 @@ impl AnyClassProperties {
 
     pub fn range(&self) -> Option<TextRange> {
         match self {
-            AnyClassProperties::JsPropertyClassMember(property_class_member) => {
+            AnyClassPropertiesLike::JsPropertyClassMember(property_class_member) => {
                 Some(property_class_member.name().ok()?.range())
             }
-            AnyClassProperties::TsPropertyParameter(property_parameter) => {
+            AnyClassPropertiesLike::TsPropertyParameter(property_parameter) => {
                 match property_parameter.formal_parameter().ok()? {
                     AnyJsFormalParameter::JsBogusParameter(_)
                     | AnyJsFormalParameter::JsMetavariable(_) => None,
@@ -410,30 +436,16 @@ impl AnyClassProperties {
                             .ok()?
                             .as_any_js_binding()?
                             .as_js_identifier_binding()?
-                            .name_token()
-                            .ok()?
-                            .text_range(),
+                            .range(),
                     ),
                 }
             }
         }
     }
 
-    pub fn into_syntax(&self) -> SyntaxElement<JsLanguage> {
-        let syntax = match self {
-            AnyClassProperties::JsPropertyClassMember(property_class_member) => {
-                property_class_member.clone().into_syntax()
-            }
-            AnyClassProperties::TsPropertyParameter(property_parameter) => {
-                property_parameter.clone().into_syntax()
-            }
-        };
-        SyntaxElement::Node(syntax)
-    }
-
     pub fn replace_syntax(&self) -> SyntaxElement<JsLanguage> {
         match self {
-            AnyClassProperties::JsPropertyClassMember(member) => {
+            AnyClassPropertiesLike::JsPropertyClassMember(member) => {
                 let class_member_name = member.name();
                 if let Ok(class_member_name) = class_member_name {
                     let mut class_member_name = class_member_name;
@@ -484,9 +496,8 @@ impl AnyClassProperties {
                     let replace_member = builder.build();
                     return SyntaxElement::Node(replace_member.into_syntax());
                 }
-                self.into_syntax()
             }
-            AnyClassProperties::TsPropertyParameter(parameter) => {
+            AnyClassPropertiesLike::TsPropertyParameter(parameter) => {
                 let formal_parameter = parameter.formal_parameter();
                 if let Ok(formal_parameter) = formal_parameter {
                     let decorators = parameter.decorators();
@@ -510,8 +521,8 @@ impl AnyClassProperties {
                         make::ts_property_parameter(decorators, modifiers, formal_parameter);
                     return SyntaxElement::Node(replace_parameter.into_syntax());
                 }
-                self.into_syntax()
             }
         }
+        self.syntax().clone().into()
     }
 }

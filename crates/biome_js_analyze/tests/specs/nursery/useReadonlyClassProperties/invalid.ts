@@ -1,5 +1,5 @@
 class InvalidContainer {
-	public publicMember: boolean
+  public publicMember: boolean
   // These member variables could be marked as readonly
   private neverModifiedMember = true;
   private onlyModifiedInConstructor: number;
