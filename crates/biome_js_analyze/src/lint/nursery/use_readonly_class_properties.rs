@@ -232,11 +232,15 @@ fn get_eligible_property(
     }
 
     let mut eligible = false;
+    // `JsAccessorModifier` can't use with `TsReadonlyModifier`
     modifiers.iter().for_each(|modifier| match modifier {
         AnyJsPropertyModifier::TsAccessibilityModifier(accessibility_modifier) => {
             eligible = !only_private || accessibility_modifier.is_private();
         }
         AnyJsPropertyModifier::TsReadonlyModifier(_) => {
+            eligible = false;
+        }
+        AnyJsPropertyModifier::JsAccessorModifier(_) => {
             eligible = false;
         }
         _ => {}
