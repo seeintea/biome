@@ -287,6 +287,27 @@ fn get_property_name(assignment: AnyJsAssignment) -> Option<String> {
     }
 }
 
+
+// maybe effect var
+// 0. AccessExpression ?
+// + / - = ?
+// 1. BinaryExpression
+// this.#app >>
+// this.#app >>>
+// 2. DeleteExpression
+// delete this.#app
+// 3. DestructuringAssignment
+// - ObjectLiteralExpression
+// - ArrayLiteralExpression
+// - SpreadAssignment
+// [...this.app] = newValue // => JsArrayAssignmentPattern
+// [this.app] = newValue
+// 4. PostfixUnaryExpression / PrefixUnaryExpression
+// this.#app++ / ++this.#app
+// consider return class ?
+// in constructor has complex op  => (() => {})()
+// object defined
+
 fn find_properties_need_add_readonly(
     syntax: &JsSyntaxNode,
     mut properties: Vec<AnyClassPropertiesLike>,
@@ -304,7 +325,6 @@ fn find_properties_need_add_readonly(
                 // need context to check like `{} as this . `
                 JsSyntaxKind::JS_METHOD_CLASS_MEMBER => {
                     constructor_member = false;
-                    dbg!(&syntax_node);
                     let method_member = JsMethodClassMember::unwrap_cast(syntax_node.clone());
                     let parameters = method_member.parameters();
                     // public update(z: number = (() => {
@@ -313,14 +333,14 @@ fn find_properties_need_add_readonly(
                     // })()) {
                     //     this.y = z
                     // }
-                    if let Ok(parameters) = parameters {
+                    // public update(z: number = this.x += 1) { todo }
+                    if let Ok(_parameters) = parameters {
 
                     }
                 },
                 JsSyntaxKind::JS_CONSTRUCTOR_CLASS_MEMBER => {
                     // TODO static member if chang in constructor
                     constructor_member = true;
-                    dbg!(&syntax_node);
                 },
                 JsSyntaxKind::JS_ASSIGNMENT_EXPRESSION => {
                     if constructor_member {

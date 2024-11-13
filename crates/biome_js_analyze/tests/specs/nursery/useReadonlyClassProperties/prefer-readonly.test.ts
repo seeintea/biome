@@ -1,19 +1,4 @@
-import { RuleTester } from '@typescript-eslint/rule-tester';
-
-import rule from '../../src/rules/prefer-readonly';
-import { getFixturesRootDir } from '../RuleTester';
-
-const rootDir = getFixturesRootDir();
-const ruleTester = new RuleTester({
-  languageOptions: {
-    parserOptions: {
-      project: './tsconfig.json',
-      tsconfigRootDir: rootDir,
-    },
-  },
-});
-
-ruleTester.run('prefer-readonly', rule, {
+const test = {
   valid: [
     'function ignore() {}',
     'const ignore = function () {};',
@@ -2334,4 +2319,4 @@ function ClassWithName<TBase extends new (...args: any[]) => {}>(Base: TBase) {
       `,
     },
   ],
-});
+}
