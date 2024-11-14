@@ -14,7 +14,7 @@ use std::{ffi::OsStr, fs::read_to_string, path::Path, slice};
 #[ignore]
 #[test]
 fn quick_test() {
-    let input_file = Path::new("tests/specs/nursery/useReadonlyClassProperties/valid.ts");
+    let input_file = Path::new("tests/specs/nursery/useReadonlyClassProperties/single.ts");
     let file_name = input_file.file_name().and_then(OsStr::to_str).unwrap();
 
     let (group, rule) = parse_test_path(input_file);
@@ -95,5 +95,5 @@ fn analyze(
         diagnostics.push(diagnostic_to_string(file_name, input_code, error));
     }
 
-    println!("Diagnostics:\n{}", diagnostics.join("\n"));
+    // println!("Diagnostics:\n{}", diagnostics.join("\n"));
 }

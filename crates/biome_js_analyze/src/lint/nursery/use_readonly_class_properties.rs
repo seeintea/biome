@@ -6,7 +6,7 @@ use biome_console::markup;
 use biome_deserialize_macros::Deserializable;
 use biome_js_factory::make;
 use biome_js_syntax::{
-    AnyJsAssignment, AnyJsAssignmentPattern, AnyJsClassMember, AnyJsClassMemberName, AnyJsConstructorParameter, AnyJsFormalParameter, AnyJsPropertyModifier, AnyTsPropertyParameterModifier, JsAssignmentExpression, JsClassDeclaration, JsLanguage, JsMethodClassMember, JsPropertyClassMember, JsSyntaxKind, JsSyntaxNode, JsSyntaxToken, TsPropertyParameter
+    AnyJsAssignment, AnyJsAssignmentPattern, AnyJsClassMember, AnyJsClassMemberName, AnyJsConstructorParameter, AnyJsExpression, AnyJsFormalParameter, AnyJsPropertyModifier, AnyJsStatement, AnyTsPropertyParameterModifier, JsAssignmentExpression, JsClassDeclaration, JsConstructorClassMember, JsFunctionBody, JsLanguage, JsMethodClassMember, JsPropertyClassMember, JsStatementList, JsSyntaxKind, JsSyntaxNode, JsSyntaxToken, TsPropertyParameter
 };
 use biome_rowan::{
     declare_node_union, syntax::SyntaxTrivia, AstNode, AstNodeExt, AstNodeList, AstSeparatedList,
@@ -137,7 +137,8 @@ impl Rule for UseReadonlyClassProperties {
     fn action(ctx: &RuleContext<Self>, state: &Self::State) -> Option<JsRuleAction> {
         let mut mutation = ctx.root().begin();
 
-        mutation.replace_element_discard_trivia(state.syntax().clone().into(), state.replace_syntax());
+        mutation
+            .replace_element_discard_trivia(state.syntax().clone().into(), state.replace_syntax());
 
         Some(JsRuleAction::new(
             ctx.metadata().action_category(ctx.category(), ctx.group()),
@@ -166,6 +167,7 @@ fn is_default<T: Default + Eq>(value: &T) -> bool {
     value == &T::default()
 }
 
+// fixed
 fn get_constructor_eligible_params(
     class_declaration: &JsClassDeclaration,
     only_private: bool,
@@ -211,6 +213,7 @@ fn get_constructor_eligible_params(
     Vec::new()
 }
 
+// fixed
 fn get_eligible_property(
     property_class_member: &JsPropertyClassMember,
     only_private: bool,
@@ -231,11 +234,11 @@ fn get_eligible_property(
     let mut eligible = false;
     for modifier in modifiers.iter() {
         match modifier {
-            AnyJsPropertyModifier::JsAccessorModifier(_)|
-            AnyJsPropertyModifier::TsReadonlyModifier(_) => {
+            AnyJsPropertyModifier::JsAccessorModifier(_)
+            | AnyJsPropertyModifier::TsReadonlyModifier(_) => {
                 eligible = false;
                 break;
-            },
+            }
             AnyJsPropertyModifier::TsAccessibilityModifier(accessibility_modifier) => {
                 eligible = !only_private || accessibility_modifier.is_private();
             }
@@ -246,6 +249,7 @@ fn get_eligible_property(
     eligible
 }
 
+// fixed
 fn get_eligible_properties(
     class_declaration: &JsClassDeclaration,
     only_private: bool,
@@ -267,6 +271,7 @@ fn get_eligible_properties(
         .collect()
 }
 
+// fixed
 fn get_property_name(assignment: AnyJsAssignment) -> Option<String> {
     match assignment {
         AnyJsAssignment::JsStaticMemberAssignment(static_member_assignment) => {
@@ -286,7 +291,6 @@ fn get_property_name(assignment: AnyJsAssignment) -> Option<String> {
         _ => None,
     }
 }
-
 
 // maybe effect var
 // 0. AccessExpression ?
@@ -308,6 +312,143 @@ fn get_property_name(assignment: AnyJsAssignment) -> Option<String> {
 // in constructor has complex op  => (() => {})()
 // object defined
 
+fn find_params() {
+    todo!();
+}
+
+// if function return on one and as this => pass
+// else ignore it
+// ignore as!!!!!!!!!
+
+fn find_property_modify_in_function(statements: JsStatementList, knowns_refers: Vec<&str>) {
+    let refers = knowns_refers;
+    for statement in statements {
+        match statement {
+            AnyJsStatement::JsBlockStatement(block_statement) => {
+                let next_statements = block_statement.statements();
+                find_property_modify_in_function(next_statements, refers.clone());
+            }
+            AnyJsStatement::JsBogusStatement(_) => {} // ignore exp.function a }
+            AnyJsStatement::JsBreakStatement(_) => {} // ignore
+            AnyJsStatement::JsClassDeclaration(_class_declaration) => {
+                // need test, maybe will check it by rules
+            }
+            AnyJsStatement::JsContinueStatement(_) => {} // ignore
+            AnyJsStatement::JsDebuggerStatement(_) => {} // ignore
+            AnyJsStatement::JsDoWhileStatement(do_while_statements) => {
+                let js_statement = do_while_statements.body();
+                if let Ok(js_statement) = js_statement {
+                    let block_statement = js_statement.as_js_block_statement();
+                    if let Some(block_statement) = block_statement {
+                        let next_statements = block_statement.statements();
+                        find_property_modify_in_function(next_statements, refers.clone());
+                    }
+                }
+            }
+            AnyJsStatement::JsEmptyStatement(_) => {} // ignore
+            AnyJsStatement::JsExpressionStatement(expression_statement) =>  {
+                let expression = expression_statement.expression();
+                if let Ok(expression) = expression {
+                    match expression {
+                        AnyJsExpression::AnyJsLiteralExpression(any_js_literal_expression) => todo!(),
+                        AnyJsExpression::JsArrayExpression(js_array_expression) => todo!(),
+                        AnyJsExpression::JsArrowFunctionExpression(js_arrow_function_expression) => todo!(),
+                        AnyJsExpression::JsAssignmentExpression(js_assignment_expression) => todo!(),
+                        AnyJsExpression::JsAwaitExpression(js_await_expression) => todo!(),
+                        AnyJsExpression::JsBinaryExpression(js_binary_expression) => todo!(),
+                        AnyJsExpression::JsBogusExpression(js_bogus_expression) => todo!(),
+                        AnyJsExpression::JsCallExpression(js_call_expression) => todo!(),
+                        AnyJsExpression::JsClassExpression(js_class_expression) => todo!(),
+                        AnyJsExpression::JsComputedMemberExpression(js_computed_member_expression) => todo!(),
+                        AnyJsExpression::JsConditionalExpression(js_conditional_expression) => todo!(),
+                        AnyJsExpression::JsFunctionExpression(js_function_expression) => todo!(),
+                        AnyJsExpression::JsIdentifierExpression(js_identifier_expression) => todo!(),
+                        AnyJsExpression::JsImportCallExpression(js_import_call_expression) => todo!(),
+                        AnyJsExpression::JsImportMetaExpression(js_import_meta_expression) => todo!(),
+                        AnyJsExpression::JsInExpression(js_in_expression) => todo!(),
+                        AnyJsExpression::JsInstanceofExpression(js_instanceof_expression) => todo!(),
+                        AnyJsExpression::JsLogicalExpression(js_logical_expression) => todo!(),
+                        AnyJsExpression::JsMetavariable(js_metavariable) => todo!(),
+                        AnyJsExpression::JsNewExpression(js_new_expression) => todo!(),
+                        AnyJsExpression::JsNewTargetExpression(js_new_target_expression) => todo!(),
+                        AnyJsExpression::JsObjectExpression(js_object_expression) => todo!(),
+                        AnyJsExpression::JsParenthesizedExpression(js_parenthesized_expression) => todo!(),
+                        AnyJsExpression::JsPostUpdateExpression(js_post_update_expression) => todo!(),
+                        AnyJsExpression::JsPreUpdateExpression(js_pre_update_expression) => todo!(),
+                        AnyJsExpression::JsSequenceExpression(js_sequence_expression) => todo!(),
+                        AnyJsExpression::JsStaticMemberExpression(js_static_member_expression) => todo!(),
+                        AnyJsExpression::JsSuperExpression(js_super_expression) => todo!(),
+                        AnyJsExpression::JsTemplateExpression(js_template_expression) => todo!(),
+                        AnyJsExpression::JsThisExpression(js_this_expression) => todo!(),
+                        AnyJsExpression::JsUnaryExpression(js_unary_expression) => todo!(),
+                        AnyJsExpression::JsYieldExpression(js_yield_expression) => todo!(),
+                        AnyJsExpression::JsxTagExpression(jsx_tag_expression) => todo!(),
+                        AnyJsExpression::TsAsExpression(ts_as_expression) => todo!(),
+                        AnyJsExpression::TsInstantiationExpression(ts_instantiation_expression) => todo!(),
+                        AnyJsExpression::TsNonNullAssertionExpression(ts_non_null_assertion_expression) => todo!(),
+                        AnyJsExpression::TsSatisfiesExpression(ts_satisfies_expression) => todo!(),
+                        AnyJsExpression::TsTypeAssertionExpression(ts_type_assertion_expression) => todo!(),
+                    }
+                }
+            },
+            AnyJsStatement::JsForInStatement(for_in_statement) => {
+                let js_statement = for_in_statement.body();
+                // TODO may AnyJsStatement can package
+                // in this case
+                // for item in x
+                //      this.app = item
+                // not in js_block_statement
+                if let Ok(js_statement) = js_statement {
+                    let block_statement = js_statement.as_js_block_statement();
+                    if let Some(block_statement) = block_statement {
+                        let next_statements: JsStatementList = block_statement.statements();
+                        find_property_modify_in_function(next_statements, refers.clone());
+                    }
+                }
+            },
+            AnyJsStatement::JsForOfStatement(js_for_of_statement) => todo!(),
+            AnyJsStatement::JsForStatement(js_for_statement) => todo!(),
+            AnyJsStatement::JsFunctionDeclaration(js_function_declaration) => {
+                // may update in js func
+            },
+            AnyJsStatement::JsIfStatement(js_if_statement) => todo!(),
+            AnyJsStatement::JsLabeledStatement(js_labeled_statement) => todo!(),
+            AnyJsStatement::JsMetavariable(js_metavariable) => todo!(),
+            AnyJsStatement::JsReturnStatement(js_return_statement) => todo!(),
+            AnyJsStatement::JsSwitchStatement(js_switch_statement) => todo!(),
+            AnyJsStatement::JsThrowStatement(js_throw_statement) => todo!(),
+            AnyJsStatement::JsTryFinallyStatement(js_try_finally_statement) => todo!(),
+            AnyJsStatement::JsTryStatement(js_try_statement) => todo!(),
+            AnyJsStatement::JsVariableStatement(js_variable_statement) => todo!(),
+            AnyJsStatement::JsWhileStatement(js_while_statement) => todo!(),
+            AnyJsStatement::JsWithStatement(js_with_statement) => todo!(),
+            AnyJsStatement::TsDeclareFunctionDeclaration(ts_declare_function_declaration) => {
+                todo!()
+            }
+            AnyJsStatement::TsDeclareStatement(ts_declare_statement) => todo!(),
+            AnyJsStatement::TsEnumDeclaration(ts_enum_declaration) => todo!(),
+            AnyJsStatement::TsExternalModuleDeclaration(ts_external_module_declaration) => todo!(),
+            AnyJsStatement::TsGlobalDeclaration(ts_global_declaration) => todo!(),
+            AnyJsStatement::TsImportEqualsDeclaration(ts_import_equals_declaration) => todo!(),
+            AnyJsStatement::TsInterfaceDeclaration(ts_interface_declaration) => todo!(),
+            AnyJsStatement::TsModuleDeclaration(ts_module_declaration) => todo!(),
+            AnyJsStatement::TsTypeAliasDeclaration(ts_type_alias_declaration) => todo!(),
+            _ => {}
+        }
+    }
+}
+
+fn find_method_member_change(method_class_member: &JsMethodClassMember) {
+    let instances: Vec<&str> = vec!["this"];
+    // TODO check params
+    // let parameters = method_class_member.parameters();
+    let fn_body = method_class_member.body();
+    if let Ok(fn_body) = fn_body {
+        let statements = fn_body.statements();
+        for _statement in statements {}
+    }
+}
+
 fn find_properties_need_add_readonly(
     syntax: &JsSyntaxNode,
     mut properties: Vec<AnyClassPropertiesLike>,
@@ -326,22 +467,14 @@ fn find_properties_need_add_readonly(
                 JsSyntaxKind::JS_METHOD_CLASS_MEMBER => {
                     constructor_member = false;
                     let method_member = JsMethodClassMember::unwrap_cast(syntax_node.clone());
-                    let parameters = method_member.parameters();
-                    // public update(z: number = (() => {
-                    //     this.x += 1;
-                    //     return this.x
-                    // })()) {
-                    //     this.y = z
-                    // }
-                    // public update(z: number = this.x += 1) { todo }
-                    if let Ok(_parameters) = parameters {
-
-                    }
-                },
+                    find_method_member_change(&method_member);
+                }
                 JsSyntaxKind::JS_CONSTRUCTOR_CLASS_MEMBER => {
                     // TODO static member if chang in constructor
                     constructor_member = true;
-                },
+                    let _constructor_member =
+                        JsConstructorClassMember::unwrap_cast(syntax_node.clone());
+                }
                 JsSyntaxKind::JS_ASSIGNMENT_EXPRESSION => {
                     if constructor_member {
                         continue; // skip constructor assignment
@@ -357,8 +490,8 @@ fn find_properties_need_add_readonly(
                             changed_properties.insert(name);
                         }
                     }
-                },
-                _ => {},
+                }
+                _ => {}
             },
             WalkEvent::Leave(_) => {}
         }
